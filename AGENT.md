@@ -28,7 +28,7 @@ The two effects sum to approximately the total WoW change in the metric.
 Run one metric with any two breakdown dimensions:
 
 ```bash
-python mix_effects.py \
+python3 mix_effects.py \
   --metric apr \
   --dim1 fee_segment \
   --dim2 risk_grade \
@@ -111,10 +111,10 @@ Stop digging when the story is clear — don't run every possible cut.
 ### Step 1 — Always run: fee_segment × all for the 4 core metrics
 
 ```bash
-python mix_effects.py --metric apr --dim1 fee_segment
-python mix_effects.py --metric annual_target_return_rate --dim1 fee_segment
-python mix_effects.py --metric combined_fee_rate --dim1 fee_segment
-python mix_effects.py --metric expected_annualized_loss_rate --dim1 fee_segment
+python3 mix_effects.py --metric apr --dim1 fee_segment
+python3 mix_effects.py --metric annual_target_return_rate --dim1 fee_segment
+python3 mix_effects.py --metric combined_fee_rate --dim1 fee_segment
+python3 mix_effects.py --metric expected_annualized_loss_rate --dim1 fee_segment
 ```
 
 Read off:
@@ -126,7 +126,7 @@ Read off:
 ### Step 2 — Always run: fee_segment × risk_grade for the primary metric
 
 ```bash
-python mix_effects.py --metric apr --dim1 fee_segment --dim2 risk_grade
+python3 mix_effects.py --metric apr --dim1 fee_segment --dim2 risk_grade
 ```
 
 This is the most important drill cut. It shows whether movements within a fee_segment
@@ -174,17 +174,17 @@ three of these before concluding an investor repriced:
 
 ```bash
 # 1. Investor × all: which investors moved? (coarse — grade mix confounds this)
-python mix_effects.py --metric apr --dim1 investor --lp-or-mpl MPL
+python3 mix_effects.py --metric apr --dim1 investor --lp-or-mpl MPL
 
 # 2. Investor × risk_grade: controls for grade mix within each investor.
 #    If within-cell changes are small here, investor×all "repricing" was grade mix, not real.
 #    If within-cell changes are large (>20bps), that investor genuinely repriced.
-python mix_effects.py --metric apr --dim1 investor --dim2 risk_grade --lp-or-mpl MPL
+python3 mix_effects.py --metric apr --dim1 investor --dim2 risk_grade --lp-or-mpl MPL
 
 # 3. FICO × all: most granular credit quality cut.
 #    Large price effects here = real rate movement. FICO mix shift = composition, not repricing.
 #    FICO bands: [0-640), [640-660), [660-680), [680-700), [700-720), [720+)
-python mix_effects.py --metric apr --dim1 fico --lp-or-mpl MPL
+python3 mix_effects.py --metric apr --dim1 fico --lp-or-mpl MPL
 ```
 
 **How to read investor × risk_grade:**
@@ -209,13 +209,13 @@ LP is simpler than MPL (no investor dimension) but grade mix is still the primar
 
 ```bash
 # 1. Top-level LP split
-python mix_effects.py --metric apr --dim1 fee_segment --lp-or-mpl LP
+python3 mix_effects.py --metric apr --dim1 fee_segment --lp-or-mpl LP
 
 # 2. Grade mix within LP segments — always run before calling it repricing
-python mix_effects.py --metric apr --dim1 fee_segment --dim2 risk_grade --lp-or-mpl LP
+python3 mix_effects.py --metric apr --dim1 fee_segment --dim2 risk_grade --lp-or-mpl LP
 
 # 3. Is_tprime_borrower — quick prime/non-prime quality check within LP
-python mix_effects.py --metric apr --dim1 fee_segment --dim2 is_tprime_borrower --lp-or-mpl LP
+python3 mix_effects.py --metric apr --dim1 fee_segment --dim2 is_tprime_borrower --lp-or-mpl LP
 ```
 
 LP-specific patterns:
@@ -224,25 +224,25 @@ LP-specific patterns:
 - **LP Other grade A** can show noisy signals — the segment is small and grade A within it
   is tiny, making percentage moves misleading. Check absolute volume before concluding.
 - LP doesn't have investor-level granularity, so FICO is the deepest credit quality cut:
-  `python mix_effects.py --metric apr --dim1 fico --lp-or-mpl LP`
+  `python3 mix_effects.py --metric apr --dim1 fico --lp-or-mpl LP`
 
 **If risk grade mix is shifting (E share growing, grade mix moving):**
 ```bash
-python mix_effects.py --metric apr --dim1 risk_grade --dim2 channel
-python mix_effects.py --metric e_share --dim1 fee_segment
-python mix_effects.py --metric apr --dim1 risk_grade --dim2 is_tprime_borrower
+python3 mix_effects.py --metric apr --dim1 risk_grade --dim2 channel
+python3 mix_effects.py --metric e_share --dim1 fee_segment
+python3 mix_effects.py --metric apr --dim1 risk_grade --dim2 is_tprime_borrower
 ```
 
 **If you suspect a model change:**
 ```bash
-python mix_effects.py --metric apr --dim1 model --dim2 risk_grade
+python3 mix_effects.py --metric apr --dim1 model --dim2 risk_grade
 ```
 
 **If the move looks channel-specific:**
 ```bash
-python mix_effects.py --metric apr --dim1 channel --dim2 fee_segment
-python mix_effects.py --metric apr --dim1 fee_segment --channel dm
-python mix_effects.py --metric apr --dim1 fee_segment --channel onsite
+python3 mix_effects.py --metric apr --dim1 channel --dim2 fee_segment
+python3 mix_effects.py --metric apr --dim1 fee_segment --channel dm
+python3 mix_effects.py --metric apr --dim1 fee_segment --channel onsite
 ```
 
 ### Step 5 — Synthesize the narrative
