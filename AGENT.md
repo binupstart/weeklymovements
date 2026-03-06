@@ -160,8 +160,11 @@ Pick from the table below based on what metric you are analyzing:
 
 **If price effect is the dominant driver:**
 - Find which segment(s) had the largest `impact_metric_pc`
-- Drill that segment by risk grade: `--dim1 risk_grade --lp-or-mpl MPL` (or LP)
-- If MPL: check investor mix: `--dim1 investor --lp-or-mpl MPL`
+- Drill that segment by risk grade: `--dim1 fee_segment --dim2 risk_grade`
+- **Do not conclude repricing until you've run `investor × risk_grade` and `fico × all`.**
+  A large price effect at a coarse level (investor, fee_segment) is often grade mix at
+  a finer level. True repricing shows up as large within-cell changes when you control for grade.
+- If MPL: run the full MPL deep-dive sequence (see below)
 - If LP: check `--dim1 fee_segment --lp-or-mpl LP --dim2 risk_grade`
 - Check `is_tprime_borrower` within the moving segment to see if prime/non-prime mix changed
 
@@ -172,11 +175,41 @@ Pick from the table below based on what metric you are analyzing:
 - Check EOM patterns: LP throttles EOM, MPL picks up overflow — common on last days of month
 - Check counter-offer share: `--dim1 is_counter × all`
 
-**If MPL segments are moving:**
+**If MPL segments are moving — run the full MPL deep-dive sequence:**
+
+MPL investor-level moves are often grade mix masquerading as repricing. Always run all
+three of these before concluding an investor repriced:
+
 ```bash
+# 1. Investor × all: which investors moved? (coarse — grade mix confounds this)
 python mix_effects.py --metric apr --dim1 investor --lp-or-mpl MPL
-python mix_effects.py --metric apr --dim1 fee_segment --dim2 risk_grade --lp-or-mpl MPL
+
+# 2. Investor × risk_grade: controls for grade mix within each investor.
+#    If within-cell changes are small here, investor×all "repricing" was grade mix, not real.
+#    If within-cell changes are large (>20bps), that investor genuinely repriced.
+python mix_effects.py --metric apr --dim1 investor --dim2 risk_grade --lp-or-mpl MPL
+
+# 3. FICO × all: most granular credit quality cut.
+#    Large price effects here = real rate movement. FICO mix shift = composition, not repricing.
+#    FICO bands: [0-640), [640-660), [660-680), [680-700), [700-720), [720+)
+python mix_effects.py --metric apr --dim1 fico --lp-or-mpl MPL
 ```
+
+**How to read investor × risk_grade:**
+- **Small within-cell changes (<10bps) + large mix impacts** → investor-level move was grade
+  composition. The investor didn't reprice; it just originated a different grade mix this week.
+- **Large within-cell changes (>20bps) consistent across grades** → genuine repricing for
+  that investor. All grades moved together = rate sheet change.
+- **Large within-cell changes for only one or two grades** → selective grade-level adjustment
+  or data artefact (small volume in that cell — check `volume_last_period` / `volume_this_period`).
+
+**How to read FICO:**
+- FICO is a proxy for risk, which determines grade, which determines pricing.
+- If FICO mix shifted (large `impact_volume_pc` at the FICO level) → underlying credit quality
+  of originations changed. This will flow through to grade mix changes next week.
+- If FICO price effects are large in a specific band → real rate changes targeted at that
+  credit tier, likely a deliberate pricing or model adjustment.
+- A move in FICO 680–720 is the most impactful band (highest volume, mid-range APR).
 
 **If LP segments are moving:**
 ```bash
@@ -235,6 +268,12 @@ Example:
 - **Counter% spike**: Usually follows a model change or underwriting expansion
 - **E share growth**: Watch for risk drift, often channel or model related
 - **LP-Tprime A dominating mix**: When prime grade A LP grows, it strongly pulls total APR down (low APR, large volume)
+- **Grade mix masquerading as repricing**: The most common misread. An investor's average APR
+  can swing 30–70bps WoW purely from grade mix shifting (e.g., Core shed E-grade volume and
+  looked like it repriced up 47bps, when within-grade moves were <15bps). Always verify with
+  `investor × risk_grade` before calling it a pricing change.
+- **FICO as leading indicator**: FICO mix changes this week often predict grade mix changes
+  next week. A shift toward lower FICO this week → expect E share to rise next week.
 
 **Units:** All metrics stored as decimals. Multiply × 100 for %, × 10,000 for bps.
 
