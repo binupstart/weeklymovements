@@ -1,0 +1,242 @@
+-- Weekly Mix Effects Query
+-- Jinja2-rendered version of Mode Analytics Liquid template
+
+with raw as (
+  select
+    {{ date_type }} as date
+    {% if dim1 == 'is_tprime_borrower' %}
+      ,is_tprime_borrower as dim1
+    {% elif dim1 == 'risk_grade' %}
+      ,risk_grade as dim1
+    {% elif dim1 == 'model' %}
+      ,underwriting_model_version as dim1
+    {% elif dim1 == 'channel' %}
+      ,channel as dim1
+    {% elif dim1 == 'fico' %}
+      ,fico as dim1
+    {% elif dim1 == 'lp_or_mpl' %}
+      ,lender_category as dim1
+    {% elif dim1 == 'is_counter' %}
+      ,is_counter_offer_flow as dim1
+    {% elif dim1 == 'fee_segment' %}
+      ,case
+        when lender_category = 'MPL' and pricing_strategy_group_name = 'MPL Tprime' THEN 'MPL-Tprime'
+        when lender_category = 'LP' and pricing_strategy_group_name in ('LP T1', 'LP T2') THEN 'LP-Tprime'
+        when lender_category = 'LP' THEN 'LP Other'
+        when lender_category = 'MPL' and is_counter_offer_flow THEN 'MPL Counter'
+        when lender_category = 'MPL' THEN 'MPL Full'
+        else 'Error'
+      end as dim1
+    {% elif dim1 == 'investor' %}
+      ,case
+        when lender_category = 'LP' AND pricing_strategy_group_name = 'LP Core' then 'LP Core'
+        when lender_category = 'LP' then 'LP Tprime'
+        when lender_category = 'MPL' and pricing_strategy_group_name in ('MPL Core') then 'MPL Core'
+        when lender_category = 'MPL' and pricing_strategy_group_name in ('Fortress') then 'MPL Fortress'
+        when lender_category = 'MPL' and pricing_strategy_group_name in ('MPL E Player') then 'MPL E'
+        when lender_category = 'MPL' and pricing_strategy_group_name = 'MPL Tprime' THEN 'MPL Tprime'
+        when lender_category = 'MPL' and pricing_strategy_group_name = 'Blue Owl' then 'MPL Blue Owl'
+        when lender_category = 'MPL' and pricing_strategy_group_name = 'Castlelake MPL' then 'MPL Castlelake'
+        when lender_category = 'MPL' and pricing_strategy_group_name = 'NB' then 'MPL NB'
+        when lender_category = 'MPL' and pricing_strategy_group_name IN ('LP Core', 'MPL Other', 'MPL BDA', 'Upstart PL Retained', 'CRB Madden Retained') then 'MPL Other'
+        else 'ERROR'
+      end as dim1
+    {% else %}
+      ,'all' as dim1
+    {% endif %}
+    {% if dim2 == 'is_tprime_borrower' %}
+      ,is_tprime_borrower as dim2
+    {% elif dim2 == 'risk_grade' %}
+      ,risk_grade as dim2
+    {% elif dim2 == 'model' %}
+      ,underwriting_model_version as dim2
+    {% elif dim2 == 'channel' %}
+      ,channel as dim2
+    {% elif dim2 == 'fico' %}
+      ,fico as dim2
+    {% elif dim2 == 'lp_or_mpl' %}
+      ,lender_category as dim2
+    {% elif dim2 == 'is_counter' %}
+      ,is_counter_offer_flow as dim2
+    {% elif dim2 == 'fee_segment' %}
+      ,case
+        when lender_category = 'MPL' and pricing_strategy_group_name = 'MPL Tprime' THEN 'MPL-Tprime'
+        when lender_category = 'LP' and pricing_strategy_group_name in ('LP T1', 'LP T2') THEN 'LP-Tprime'
+        when lender_category = 'LP' THEN 'LP Other'
+        when lender_category = 'MPL' and is_counter_offer_flow THEN 'MPL Counter'
+        when lender_category = 'MPL' THEN 'MPL Full'
+        else 'Error'
+      end as dim2
+    {% elif dim2 == 'investor' %}
+      ,case
+        when lender_category = 'LP' AND pricing_strategy_group_name = 'LP Core' then 'LP Core'
+        when lender_category = 'LP' then 'LP Tprime'
+        when lender_category = 'MPL' and pricing_strategy_group_name in ('MPL Core') then 'MPL Core'
+        when lender_category = 'MPL' and pricing_strategy_group_name in ('Fortress') then 'MPL Fortress'
+        when lender_category = 'MPL' and pricing_strategy_group_name in ('MPL E Player') then 'MPL E'
+        when lender_category = 'MPL' and pricing_strategy_group_name = 'MPL Tprime' THEN 'MPL Tprime'
+        when lender_category = 'MPL' and pricing_strategy_group_name = 'Blue Owl' then 'MPL Blue Owl'
+        when lender_category = 'MPL' and pricing_strategy_group_name = 'Castlelake MPL' then 'MPL Castlelake'
+        when lender_category = 'MPL' and pricing_strategy_group_name = 'NB' then 'MPL NB'
+        when lender_category = 'MPL' and pricing_strategy_group_name IN ('LP Core', 'MPL Other', 'MPL BDA', 'Upstart PL Retained', 'CRB Madden Retained') then 'MPL Other'
+        else 'ERROR'
+      end as dim2
+    {% else %}
+      ,'all' as dim2
+    {% endif %}
+    {% if volume == 'loan_amount' %}
+      {% if metric == 'is_counter_offer_flow' %}
+        ,sum(if(is_counter_offer_flow, 1, 0) * loan_amount) as weighted_metric
+      {% elif metric == 'e_share' %}
+        ,sum(if(risk_grade = 'E', 1, 0) * loan_amount) as weighted_metric
+      {% elif metric == 'average_loan_size' %}
+        ,sum(loan_amount * loan_amount) as weighted_metric
+      {% else %}
+        ,sum({{ metric }} * loan_amount) as weighted_metric
+      {% endif %}
+      ,sum(loan_amount) as volume
+    {% elif volume == 'funding_form_submits' %}
+      {% if metric == 'd_per_ffs' %}
+        ,sum(if(is_loan_originated and datediff(loan_accept_date, funding_form_submit_pt_date) between 0 and 2, loan_amount, 0)) as weighted_metric
+      {% else %}
+        ,sum({{ metric }}) as weighted_metric
+      {% endif %}
+      ,count(*) as volume
+    {% else %}
+      {% if metric == 'is_counter_offer_flow' %}
+        ,sum(if(is_counter_offer_flow, 1, 0)) as weighted_metric
+      {% elif metric == 'e_share' %}
+        ,sum(if(risk_grade = 'E', 1, 0)) as weighted_metric
+      {% elif metric == 'average_loan_size' %}
+        ,sum(loan_amount) as weighted_metric
+      {% else %}
+        ,sum({{ metric }}) as weighted_metric
+      {% endif %}
+      ,sum(1) as volume
+    {% endif %}
+  from
+    uc_production.data_analytics_playground.marketplace_appfunnel as stats
+  where
+    True
+    {% if volume != 'funding_form_submits' %}
+      and is_loan_originated
+    {% endif %}
+    {% if date_type == 'origination_date' %}
+      and not is_part_day_originations
+    {% endif %}
+    {% if lp_or_mpl != 'all' %}
+      and lender_category = '{{ lp_or_mpl }}'
+    {% endif %}
+    {% if channel != 'all' %}
+      {% if channel == 'dm' %}
+        and channel = 'dm'
+      {% elif channel == 'partner' %}
+        and channel in ('partner-ck', 'partner-other')
+      {% else %}
+        and channel not in ('dm', 'partner-ck', 'partner-other')
+      {% endif %}
+    {% endif %}
+    {% if investor != 'all' %}
+      and pricing_strategy_group_name = '{{ investor }}'
+    {% endif %}
+    {% if risk_grade != 'all' %}
+      and risk_grade = '{{ risk_grade }}'
+    {% endif %}
+  group by
+    all
+)
+
+,dates as (
+  select
+    date
+    ,any_value(dbt_bmalthus.is_last_period(date, max_date, '{{ period }}')) as is_last_period
+    ,any_value(dbt_bmalthus.is_this_period(date, max_date, '{{ period }}')) as is_this_period
+  from
+    (
+      select
+        date
+        ,max(date) over () as max_date
+      from
+        raw
+      group by all
+    )
+  group by all
+  having
+    is_last_period
+    or is_this_period
+)
+
+,date_name as (
+  select
+    concat(
+      date_format(min(if(is_this_period, date, null)), 'MM/dd'), '-',
+      date_format(max(if(is_this_period, date, null)), 'MM/dd'), ' cf. ',
+      date_format(min(if(is_last_period, date, null)), 'MM/dd'), '-',
+      date_format(max(if(is_last_period, date, null)), 'MM/dd')
+    ) as period_name
+  from
+    dates
+)
+
+,base as (
+  select
+    date_name.period_name
+    ,dim1
+    ,dim2
+    ,sum(if(dates.is_last_period, weighted_metric, 0.0)) as weighted_metric_last_period
+    ,sum(if(dates.is_this_period, weighted_metric, 0.0)) as weighted_metric_this_period
+    ,sum(if(dates.is_last_period, volume, 0.0)) as volume_last_period
+    ,sum(if(dates.is_this_period, volume, 0.0)) as volume_this_period
+  from
+    raw
+  inner join dates using (date)
+  cross join date_name
+  group by all
+  having
+    volume_last_period > 0.0
+    or volume_this_period > 0.0
+)
+
+select
+  period_name
+  ,'{{ dim1 }}' as dim1_name
+  ,dim1
+  ,'{{ dim2 }}' as dim2_name
+  ,dim2
+  ,metric_last_period
+  ,metric_this_period
+  ,volume_last_period
+  ,volume_this_period
+  ,volume_share_last_period
+  ,volume_share_this_period
+  ,impact_metric
+  ,impact_volume
+  ,impact_metric / total_metric_last_period AS impact_metric_pc
+  ,impact_volume / total_metric_last_period AS impact_volume_pc
+from
+  (
+    select
+      *
+      ,total_metric_this_period - (total_metric_this_period - metric_this_period * volume_share_this_period + metric_this_period * volume_share_last_period) / (1 - volume_share_this_period + volume_share_last_period) as impact_volume
+      ,case
+        when metric_this_period = 0.0 or metric_last_period = 0.0 then 0.0
+        else (metric_this_period - metric_last_period) * volume_share_this_period
+      end as impact_metric
+    from
+      (
+        select
+          period_name
+          ,dim1
+          ,dim2
+          ,ifnull(weighted_metric_last_period / volume_last_period, 0) as metric_last_period
+          ,ifnull(weighted_metric_this_period / volume_this_period, 0) as metric_this_period
+          ,volume_last_period
+          ,volume_this_period
+          ,volume_last_period / (sum(volume_last_period) over ()) as volume_share_last_period
+          ,volume_this_period / (sum(volume_this_period) over ()) as volume_share_this_period
+          ,(sum(weighted_metric_last_period) over ()) / (sum(volume_last_period) over ()) as total_metric_last_period
+          ,(sum(weighted_metric_this_period) over ()) / (sum(volume_this_period) over ()) as total_metric_this_period
+        from
+          base
+      )
+  )
