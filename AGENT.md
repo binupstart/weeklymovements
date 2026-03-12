@@ -342,6 +342,14 @@ A borrower's total price (expressed as APR) is the sum of four additive componen
 
 4. **Target return (`annual_target_return_rate` / TR)** — The yield Upstart must deliver to the investor funding the loan. This is what investors (MPL or LP) require to provide capital. TR is set by investor agreements and market conditions; changes here reflect investor repricing or a shift in the investor mix (since different investors have different TR requirements).
 
+**How the components relate to risk:**
+
+*Target return rises with loss.* Investors require higher yield for riskier loans, so TR and ANL are positively correlated across the book. A grade mix shift toward riskier borrowers raises both ANL and TR together — this is expected and not a signal of repricing.
+
+*Fee has a non-monotonic relationship with risk.* Fees rise modestly with risk at lower-risk tiers, but for very high-risk borrowers fees are often *discounted*. The reason is APR caps — most loans are capped at 36% APR (sometimes lower by state). For a high-loss borrower, ANL + TR already consumes most of the cap, leaving little room for fee. Upstart may reduce the fee to (a) make the loan approvable at all, or (b) enable a larger loan offer. Borrowers are more likely to accept a higher loan amount, so reducing fee to increase offer size can improve conversion. Consequence: **within high-risk segments, fee and loss can move in opposite directions** — this is expected behavior, not a red flag.
+
+*Investor pricing curves and APR-cap adverse selection.* Each investor has its own TR curve (required yield as a function of borrower risk), and these curves differ in shape and level. A "cheaper" investor (lower TR for a given risk level) can fund high-loss loans that would breach the 36% APR cap on a more expensive investor. This means cheaper investors end up holding a disproportionate share of the riskiest loans — the ones that only fit under the cap with a low-TR investor. As a result, a cheap investor's average TR may be similar to an expensive investor's average TR, because the cheap investor holds worse credit quality by construction. **Do not rank investors purely by average TR** and conclude which is cheapest — the risk mix they hold is endogenous to their position on the pricing curve relative to the APR cap. When an investor's average APR or TR shifts, first check whether the *risk mix of loans routed to them* changed before concluding their price changed.
+
 **Implication for analysis:** When APR moves, the first question is *which component moved*. A simultaneous rise in TR and APR with flat Fee and Loss suggests investor repricing. A rise in APR with rising Loss but flat TR/Fee suggests credit quality deterioration flowing through pricing. A rise in Fee with flat TR/Loss suggests Upstart changing its own take-rate. Use the 4 core metric cuts (Step 1) to decompose every APR move.
 
 ---
