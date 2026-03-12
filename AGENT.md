@@ -330,6 +330,22 @@ Example summary:
 
 ## Key Business Context
 
+**APR decomposition — the 4 components:**
+
+A borrower's total price (expressed as APR) is the sum of four additive components:
+
+1. **Annual Net Loss (`expected_annualized_loss_rate` / ANL)** — Upstart's estimated credit loss for the loan, annualized. This is the cost of credit risk and is the primary driver of APR differences across risk grades. Higher-grade-E / lower-FICO borrowers carry much higher ANL, which flows directly into their APR.
+
+2. **Origination fee (`combined_fee_rate` / ofee)** — The fee charged to the borrower for the loan. This can be charged explicitly (deducted upfront) or implicitly. The `combined_fee_rate` metric is the total ofee, annualized over the expected loan life. The annualization is complex (depends on loan term, prepayment assumptions) so the fee component of APR is not simply the nominal fee percentage. When fee and APR diverge directionally, check whether annualization assumptions or loan term mix shifted.
+
+3. **Servicing fee** — A fee charged to the borrower for loan servicing. Typically in the range of 50–100bps. This component is relatively stable and rarely the primary driver of WoW APR moves; if APR moves without a corresponding fee or loss change, servicing fee shift is worth checking.
+
+4. **Target return (`annual_target_return_rate` / TR)** — The yield Upstart must deliver to the investor funding the loan. This is what investors (MPL or LP) require to provide capital. TR is set by investor agreements and market conditions; changes here reflect investor repricing or a shift in the investor mix (since different investors have different TR requirements).
+
+**Implication for analysis:** When APR moves, the first question is *which component moved*. A simultaneous rise in TR and APR with flat Fee and Loss suggests investor repricing. A rise in APR with rising Loss but flat TR/Fee suggests credit quality deterioration flowing through pricing. A rise in Fee with flat TR/Loss suggests Upstart changing its own take-rate. Use the 4 core metric cuts (Step 1) to decompose every APR move.
+
+---
+
 **Segments (fee_segment):**
 - `MPL-Tprime`: Lowest APR (~13%), primer borrowers, lowest loss. Share growth pulls total APR down.
 - `MPL Full`: Largest segment (~38% of vol). Standard MPL full-offer.
