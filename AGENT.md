@@ -156,7 +156,7 @@ Every `mix_effects.py` run takes `--dim1` and `--dim2`. Here is what each dimens
 | `risk_grade` | A/B/C/D/E — credit quality. Drives loss rates, APR, TR. |
 | `investor` | Which MPL investor (Core, Fortress, Tprime, Blue Owl, Castlelake, NB). Use with `--lp-or-mpl MPL`. |
 | `lp_or_mpl` | MPL vs LP top-level split. Quick sanity check. |
-| `channel` | Onsite / Partner / DM. DM loans tend to be larger; partner mix shifts with marketing spend. |
+| `channel` | Onsite / Partner / DM. DM loans tend to be larger; partner mix shifts with marketing spend. Channel determines what borrowers show up — it is an exogenous demand-side input. |
 | `is_counter` | Counter-offer flow vs full offer. Counter loans have higher APR/loss. |
 | `is_tprime_borrower` | Tprime flag — good proxy for prime vs non-prime within any segment. |
 | `model` | Underwriting model version. Useful when a model rollout happened. |
@@ -217,6 +217,11 @@ python3 mix_effects.py --metric apr --dim1 fico --channel onsite --lp-or-mpl MPL
 ```
 
 DM frequently brings a lower-FICO borrower mix which drives more counter-offer flow (MPL Counter) and higher average APR through credit quality mix, not repricing. Onsite tends to show cleaner within-cell rate signals. Comparing the two FICO distributions separates genuine rate changes from channel-driven credit quality shifts.
+
+**How to read `channel × fee_segment` output correctly:**
+- `impact_volume_pc` for each cell measures that cell's contribution to **total book APR**, not to that channel's own APR. A -119bps vol impact for "DM × LP-Tprime" means that cell's share growth pulled *total book* APR down 119bps — it says nothing about DM's internal APR.
+- **Always narrate channel-first**: "DM grew → DM traffic routes disproportionately to LP-Tprime and MPL Counter → total APR moved through vol mix." Never invert this to "LP-Tprime impacted DM APR" or frame a fee_segment/investor change as driving a channel outcome. Investor and fee_segment outcomes are downstream of what borrowers the channel delivered.
+
 | `combined_fee_rate` (Fee) | `fee_segment × risk_grade`, `investor × all --lp-or-mpl MPL`, `fee_segment × is_counter` |
 | `annual_target_return_rate` (TR) | `fee_segment × risk_grade`, `investor × all --lp-or-mpl MPL` |
 | `expected_annualized_loss_rate` (Loss) | `risk_grade × all`, `fee_segment × risk_grade`, `fee_segment × is_tprime_borrower` |
@@ -327,6 +332,18 @@ python3 mix_effects.py --metric apr --dim1 fee_segment --channel onsite
 
 **Always lead with a 2–3 sentence executive summary, then provide detail.**
 The summary should be self-contained — someone reading only the summary should know what happened.
+
+**Causal structure of the business — read this before narrating:**
+
+There are two independent exogenous inputs, and one endogenous output:
+
+1. **Borrower attributes (demand-side, exogenous):** FICO, channel, loan request size. These are what show up at the door. Channel mix shifts (e.g. DM surging at start of month) change the distribution of borrower attributes entering the funnel.
+
+2. **Investor pacing (operational, exogenous):** Which investors are on, off, or throttled is an active operational lever — not a downstream consequence of what borrowers arrived. Crucially, investor pricing curves feed *back into* risk scoring: because different investors have different TR requirements, the set of active investors determines what pricing is available for a given risk tier, which shapes the risk score and loan terms offered to that borrower. When an investor goes dark, it is not just "removing a bucket" — it changes the pricing environment for the borrowers who would have gone there, which can affect their risk score and routing.
+
+3. **Fee_segment / investor match / APR (endogenous):** These are the outputs of combining borrower attributes with the active investor pricing environment. They are not independent drivers — do not treat a fee_segment or investor share shift as a cause without tracing it back to either a borrower mix change (1) or a pacing decision (2).
+
+**Narrative framing rule:** When explaining a vol mix move, always attribute it to one of the two exogenous inputs. "DM grew → more lower-FICO borrowers → more counter-offer routing" (channel-driven). "MPL E paced off → pricing for grade E borrowers changed → routing shifted" (pacing-driven). Never say "LP-Tprime grew, driving down DM APR" — that inverts the causality and names an endogenous output as the driver.
 
 **What belongs in the summary vs. data quality flags:**
 - Only mention investors in the executive summary if their volume change *materially contributed* to the metric move. An investor going dark with near-zero volume in both periods belongs in the data quality flags section, not the headline. Check actual vol share before featuring an investor in the summary.
