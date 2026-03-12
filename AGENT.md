@@ -337,6 +337,16 @@ Example summary:
 - `LP-Tprime`: Low APR (~9%), prime LP borrowers on T1/T2 strategy.
 - `LP Other`: Mid-APR LP loans (~16%).
 
+**Investor pacing (weekly):**
+The investor services team actively paces MPL investors on, off, up, and down each week. When an investor goes to zero volume (or surges), this is typically an intentional operational decision — not a data issue. Always frame investor volume changes as likely pacing moves. Note the consequence for grade/APR mix: e.g. taking a high-grade-E investor off-allocation removes high-APR tail paper, shifting MPL grade mix primer and APR downward through vol mix.
+
+**Monthly DM and marketing cycles:**
+Near the start of each calendar month, expect a spike in DM (direct mail) traffic. DM start-of-month volume typically brings:
+- Lower average FICO borrowers than the steady-state book
+- Higher APR and higher counter-offer rates (more MPL Counter flow)
+- Larger upward price effects at sub-680 FICO bands
+This is a known seasonal pattern. When a week falls at the start of the month and DM share is up, call it out explicitly as the expected monthly DM cycle rather than treating it as an anomaly. The DM surge often partially offsets LP-Tprime mix drag on total APR.
+
 **Common patterns to watch for:**
 - **EOM LP throttle**: LP reduces volume end-of-month → MPL picks up prime overflow → MPL looks primer, APR drops through mix. Reverses early next week.
 - **TR leads Fee**: Target return changes often precede fee adjustments by a few days. If TR and Fee move in opposite directions, check whether it's a lag — compare pricing_date vs origination_date view.
