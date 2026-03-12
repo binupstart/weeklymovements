@@ -187,7 +187,17 @@ Pick from the table below based on what metric you are analyzing:
 
 | Metric | Standard cuts to always run |
 |--------|----------------------------|
-| `apr` | `fee_segment × risk_grade`, `lp_or_mpl × all`, `investor × all --lp-or-mpl MPL` |
+| `apr` | `fee_segment × risk_grade`, `lp_or_mpl × all`, `investor × all --lp-or-mpl MPL`, `channel × fee_segment`, `fico --channel dm --lp-or-mpl MPL`, `fico --channel onsite --lp-or-mpl MPL` |
+
+For APR, always run the channel FICO cuts:
+
+```bash
+python3 mix_effects.py --metric apr --dim1 channel --dim2 fee_segment
+python3 mix_effects.py --metric apr --dim1 fico --channel dm --lp-or-mpl MPL
+python3 mix_effects.py --metric apr --dim1 fico --channel onsite --lp-or-mpl MPL
+```
+
+DM frequently brings a lower-FICO borrower mix which drives more counter-offer flow (MPL Counter) and higher average APR through credit quality mix, not repricing. Onsite tends to show cleaner within-cell rate signals. Comparing the two FICO distributions separates genuine rate changes from channel-driven credit quality shifts.
 | `combined_fee_rate` (Fee) | `fee_segment × risk_grade`, `investor × all --lp-or-mpl MPL`, `fee_segment × is_counter` |
 | `annual_target_return_rate` (TR) | `fee_segment × risk_grade`, `investor × all --lp-or-mpl MPL` |
 | `expected_annualized_loss_rate` (Loss) | `risk_grade × all`, `fee_segment × risk_grade`, `fee_segment × is_tprime_borrower` |
