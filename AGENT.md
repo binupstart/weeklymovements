@@ -252,6 +252,7 @@ python3 mix_effects.py --metric apr --dim1 fico --lp-or-mpl MPL
   that investor. All grades moved together = rate sheet change.
 - **Large within-cell changes for only one or two grades** → selective grade-level adjustment
   or data artefact (small volume in that cell — check `volume_last_period` / `volume_this_period`).
+- **Caveat — within-grade risk mix:** Risk grade is a coarse bucketing. Within a single grade there is meaningful variation in actual loan loss risk. An investor can show stable within-cell APR at the grade level while still experiencing a within-grade risk mix shift (e.g. receiving higher-loss loans within grade B). FICO cuts provide more granularity and are the next step when grade-level analysis leaves the story unclear, but even FICO buckets don't fully resolve this. True within-grade risk mix changes may not be fully separable from repricing with the tools available.
 
 **How to read FICO:**
 - FICO is a proxy for risk, which determines grade, which determines pricing.
