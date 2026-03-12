@@ -65,6 +65,25 @@ This means: if DM grows a lot (which is negative for total revenue quality since
 
 **Funnel stages tracked:** FFS → Got Rate (approvals) → Originations → Revenue (origination fee)
 
+**CRITICAL — ln(%) vs actual Y/Y: do not conflate these two values.**
+The summary table prints two distinct rows per channel:
+- `ln(RevY/Y)` — the log value used for the decomposition math (additive factors). e.g. +30.3%
+- `actual Y/Y` — the human-readable growth rate = exp(ln) - 1. e.g. +35.4%
+
+**Always use `actual Y/Y` for any headline or narrative statement about revenue growth.**
+Never state "revenue grew +30.3%" when the table says `actual Y/Y = +35.4%`.
+
+**Mandatory pre-narrative sanity checks (run these before writing the summary):**
+1. Headline check: confirm the "this week" and "prior week" revenue Y/Y figures in your narrative
+   match the `actual Y/Y` rows in the script output — NOT the ln(RevY/Y) rows.
+   The prior week's actual Y/Y is NOT printed directly; derive it: exp(ln_this - Δ) - 1,
+   or verify against the raw totals table (revenue_value / revenue_value_lp - 1).
+2. Direction check: if you say revenue "decelerated" or "accelerated", confirm the actual Y/Y
+   values move in the stated direction (not just the ln values).
+3. Magnitude check: the WoW Δ column is in ln-% points, not actual %-points. Do not say
+   "revenue growth fell 5.9pp" from a -5.9 Δ — that is a log-point change, not a %-point change
+   in actual growth rates.
+
 **When to use this vs. `mix_effects.py`:**
 - `mix_effects.py` → WoW analysis of rate metrics (APR, Fee, TR, Loss) with flexible dimension cuts
 - `yoy_funnel.py` → Y/Y growth analysis showing whether growth is driven by volume, applicant quality, conversion, or fee rate, trended over 8 weeks by channel
@@ -308,6 +327,9 @@ python3 mix_effects.py --metric apr --dim1 fee_segment --channel onsite
 
 **Always lead with a 2–3 sentence executive summary, then provide detail.**
 The summary should be self-contained — someone reading only the summary should know what happened.
+
+**What belongs in the summary vs. data quality flags:**
+- Only mention investors in the executive summary if their volume change *materially contributed* to the metric move. An investor going dark with near-zero volume in both periods belongs in the data quality flags section, not the headline. Check actual vol share before featuring an investor in the summary.
 
 **Summary format** (2–3 sentences max):
 > "[Metric] [up/down] [X]bps WoW ([last]% → [this]%). [One sentence: primary driver — is it
