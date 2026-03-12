@@ -23,6 +23,54 @@ The two effects sum to approximately the total WoW change in the metric.
 
 ## Available Scripts
 
+### `yoy_funnel.py` — Year-over-year funnel decomposition (8-week trending view)
+
+Decomposes Y/Y revenue growth into 4 additive log factors, showing the last 8 weeks per channel.
+
+```bash
+python3 yoy_funnel.py                          # default: 8 weeks, all channels, 2-day censoring
+python3 yoy_funnel.py --num-weeks 12           # show more history
+python3 yoy_funnel.py --censoring unrestricted # include all late acceptances
+python3 yoy_funnel.py --channel Onsite Partner # filter to specific channels
+python3 yoy_funnel.py --print-sql              # inspect rendered SQL before running
+```
+
+**Key parameters:**
+| Param | Default | Description |
+|-------|---------|-------------|
+| `--censoring` | `2day` | Accept lag window applied uniformly across history so trends are comparable. `2day` = only loans accepted within 2 days of FFS (standard). `unrestricted` = all acceptances ever. |
+| `--channel` | all | Filter to: `Onsite`, `Partner`, `'Direct Mail'` (space-separated, or omit for all) |
+| `--num-weeks` | 8 | How many recent weeks to fetch and chart |
+
+**The 4 decomposition factors (additive in log-space; sum = ln(rev Y/Y) exactly):**
+1. **FFS volume** — raw Y/Y growth in funding form submits: `ln(ffs_tp / ffs_lp)`
+2. **TOFU mix** — how the FICO × loan-size distribution changed vs. last year within each channel: `ln(rev_tp / rev_mix)`. Positive = better applicant mix than LY; negative = worse.
+3. **Conv / FFS** — change in origination rate holding LY applicant mix constant: `ln((orig_mix/ffs_mix) / (orig_lp/ffs_lp))`
+4. **Rev / loan** — change in fee per origination holding LY mix constant: `ln((rev_mix/orig_mix) / (rev_lp/orig_lp))`
+
+**Mix adjustment design (important to understand):**
+The query runs two parallel mix adjustments:
+- **Global mix** (`mix_adjusted` CTE, `channel_type='total'`): reweights cells to LY's FICO × channel × loan-size distribution across the entire book. The Total chart's TOFU mix factor captures both cross-channel shifts (e.g. DM growing vs Partner) and within-channel composition changes.
+- **Within-channel mix** (`mix_adjusted_channel` CTE, `channel_type='split'`): reweights cells to LY's FICO × loan-size distribution *within each channel separately*. Per-channel TOFU mix factors only capture intra-channel composition changes — DM growing vs Partner shows up in the Total's TOFU mix gap, not in DM's own TOFU mix.
+
+This means: if DM grows a lot (which is negative for total revenue quality since DM/FFS is low), that cross-channel shift is visible in the Total TOFU mix but is not penalised in DM's own chart. That's intentional — within DM, growth is growth.
+
+**Three output sections:**
+1. **ASCII stacked bar charts** (8 weeks, one per channel + Total): factors stack to the `●` revenue Y/Y marker. Positive factors use dark chars (█▓░▪), negative use light chars (▇▒▏·).
+2. **Weighted contribution table**: each channel's factors × (LY rev share), so channels sum to Total. Gap between ∑channels and Total = cross-channel TOFU mix shift.
+3. **Summary: This Week vs. Prior Week**:
+   - Table of this week's actual Y/Y factors + Δ (WoW change in each factor) per channel
+   - Notable WoW changes bulleted, sorted by magnitude (≥5pp flagged)
+   - 8-week sustained trends flagged only if ≥5 consecutive weeks in same direction
+
+**Funnel stages tracked:** FFS → Got Rate (approvals) → Originations → Revenue (origination fee)
+
+**When to use this vs. `mix_effects.py`:**
+- `mix_effects.py` → WoW analysis of rate metrics (APR, Fee, TR, Loss) with flexible dimension cuts
+- `yoy_funnel.py` → Y/Y growth analysis showing whether growth is driven by volume, applicant quality, conversion, or fee rate, trended over 8 weeks by channel
+
+---
+
 ### `mix_effects.py` — Single metric, flexible dimensions
 
 Run one metric with any two breakdown dimensions:

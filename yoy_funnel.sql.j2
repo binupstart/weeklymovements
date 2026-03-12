@@ -1,0 +1,384 @@
+-- Y/Y Funnel Decomposition Query
+-- Jinja2 port of Mode Analytics Liquid template
+
+with da_new_channel as (
+  select
+    application_uuid
+    ,any_value(CASE
+      when alt_name = 'Digital' then 'Digital'
+      WHEN (alt_name = 'CK Lightbox') THEN 'Lightbox'
+      WHEN (alt_name  IN ('CK API', 'Other Partner API')) THEN 'API'
+      WHEN (alt_name  IN ('Other Partner ITA', 'CK ITA', 'CK ITA Auto', 'Other Partner ITA Auto','Other Partner ITA SMB')) THEN 'ITA'
+      WHEN (alt_name in ('Direct Mail', 'Retail Partner DM')) THEN 'Direct Mail'
+      WHEN (alt_name = 'Email') THEN 'Email'
+      WHEN (alt_name = 'SEO') THEN 'SEO'
+      ELSE 'Organic'
+      END) as new_channel
+  from
+    dwh_growth.redshift_application_attribution
+  where
+    attribution_method = 'LTBRC 45 Days'
+  group by all
+)
+
+,dates as (
+  select
+    *
+    ,min(date) over (partition by relative_period) as start_date
+  from
+    (
+      select
+        date
+        ,cast(ceiling(datediff(date, max_date) / 7) as int) as relative_period
+      from
+        (
+          select
+            date
+            {% if censoring == '1day' %}
+              ,date_add(max(date) over (), -1) as max_date
+            {% elif censoring == '2day' %}
+              ,date_add(max(date) over (), -2) as max_date
+            {% else %}
+              ,max(date) over () as max_date
+            {% endif %}
+          from
+            (
+              select
+                distinct funding_form_submit_pt_date as date
+              from
+                uc_production.data_analytics_playground.marketplace_appfunnel
+              where
+                funding_form_submit_pt_date >= '2023-01-01'
+            )
+        )
+    )
+)
+
+,raw as (
+  select
+    funding_form_submit_pt_date as date
+    ,fico
+    ,case
+      when da_new_channel.new_channel = 'Direct Mail' then 'Direct Mail'
+      when da_new_channel.new_channel in ('ITA', 'Lightbox', 'API') then 'Partner'
+      else 'Onsite'
+      end as channel_rollup
+    ,ifnull(da_new_channel.new_channel, 'Organic') as channel
+    ,case
+      when loan_amount_requested >= 50000 then 50000
+      else floor(loan_amount_requested / 5000) * 5000
+      end as loan_amount_requested_bin
+    -- metrics
+    ,sum(1) as ffs_count
+    ,sum(loan_amount_requested) as ffs_requested
+    -- got rate metrics
+    ,sum(if(is_got_rate, 1, 0)) as got_rate_count
+    ,sum(if(is_got_rate, loan_amount, 0)) as got_rate_value
+    ,sum(if(is_got_rate, loan_amount_requested, 0)) as got_rate_requested
+    ,sum(if(is_got_rate, combined_fee_rate * loan_amount, 0)) as got_rate_origination_fee
+    ,sum(if(is_got_rate, apr * loan_amount, 0)) as got_rate_apr
+    ,sum(if(is_got_rate, annual_target_return_rate * loan_amount, 0)) as got_rate_tr
+    ,sum(if(is_got_rate, expected_cumulative_loss_rate * loan_amount, 0)) as got_rate_cnl
+    -- origination & revenue metrics
+    ,sum(if(is_loan_originated and
+      case '{{ censoring }}'
+        when '0day' then datediff(loan_accept_date, funding_form_submit_pt_date) <= 0
+        when '1day' then datediff(loan_accept_date, funding_form_submit_pt_date) <= 1
+        when '2day' then datediff(loan_accept_date, funding_form_submit_pt_date) <= 2
+        else true
+        end, 1, 0)) as origination_count
+    ,sum(if(is_loan_originated and
+      case '{{ censoring }}'
+        when '0day' then datediff(loan_accept_date, funding_form_submit_pt_date) <= 0
+        when '1day' then datediff(loan_accept_date, funding_form_submit_pt_date) <= 1
+        when '2day' then datediff(loan_accept_date, funding_form_submit_pt_date) <= 2
+        else true
+        end, loan_amount, 0)) as origination_value
+    ,sum(if(is_loan_originated and
+      case '{{ censoring }}'
+        when '0day' then datediff(loan_accept_date, funding_form_submit_pt_date) <= 0
+        when '1day' then datediff(loan_accept_date, funding_form_submit_pt_date) <= 1
+        when '2day' then datediff(loan_accept_date, funding_form_submit_pt_date) <= 2
+        else true
+        end, loan_amount_requested, 0)) as origination_requested
+    ,sum(if(is_loan_originated and
+      case '{{ censoring }}'
+        when '0day' then datediff(loan_accept_date, funding_form_submit_pt_date) <= 0
+        when '1day' then datediff(loan_accept_date, funding_form_submit_pt_date) <= 1
+        when '2day' then datediff(loan_accept_date, funding_form_submit_pt_date) <= 2
+        else true
+        end, combined_fee_rate * loan_amount, 0)) as revenue_value
+  from
+    uc_production.data_analytics_playground.marketplace_appfunnel as dolla
+  left join
+    da_new_channel
+    using (application_uuid)
+  where
+    funding_form_submit_pt_date >= '2023-01-01'
+  group by all
+)
+
+,base as (
+  select
+    *
+    ,ffs_count / sum(ffs_count) over (partition by relative_period) as ffs_count_share
+    ,ffs_count / sum(ffs_count) over (partition by relative_period, channel) as ffs_count_share_channel
+  from
+    (
+      select
+        dates.relative_period
+        ,dates.start_date
+        ,fico
+        ,channel
+        ,channel_rollup
+        ,loan_amount_requested_bin
+        ,sum(ffs_count) as ffs_count
+        ,sum(ffs_requested) as ffs_requested
+        ,sum(got_rate_count) as got_rate_count
+        ,sum(got_rate_value) as got_rate_value
+        ,sum(got_rate_requested) as got_rate_requested
+        ,sum(got_rate_origination_fee) as got_rate_origination_fee
+        ,sum(got_rate_apr) as got_rate_apr
+        ,sum(got_rate_tr) as got_rate_tr
+        ,sum(got_rate_cnl) as got_rate_cnl
+        ,sum(origination_count) as origination_count
+        ,sum(origination_value) as origination_value
+        ,sum(origination_requested) as origination_requested
+        ,sum(revenue_value) as revenue_value
+      from
+        raw
+      inner join
+        dates
+        using (date)
+      where
+        channel_rollup in ({{ channel_sql }})
+      group by all
+    )
+)
+
+,mix_fix as (
+  select
+    *
+    ,ffs_count_segment / sum(ffs_count_segment) over (partition by relative_period) as ffs_count_share
+    ,ffs_count_segment / sum(ffs_count_segment) over (partition by relative_period, channel) as ffs_count_share_channel
+  from
+    (
+      select
+        relative_period
+        ,fico
+        ,channel
+        ,loan_amount_requested_bin
+        ,sum(ffs_count) as ffs_count_segment
+      from
+        base
+      group by all
+    )
+)
+
+,mix_adjusted as (
+  select
+    'Total' as channel_summary
+    ,base.relative_period
+    ,base.fico
+    ,base.channel
+    ,base.loan_amount_requested_bin
+    ,ffs_count * if(mix_fix.ffs_count_share is not null, mix_fix.ffs_count_share / base.ffs_count_share, 1.0) as ffs_count_mix
+    ,ffs_requested * if(mix_fix.ffs_count_share is not null, mix_fix.ffs_count_share / base.ffs_count_share, 1.0) as ffs_requested_mix
+    ,got_rate_count * if(mix_fix.ffs_count_share is not null, mix_fix.ffs_count_share / base.ffs_count_share, 1.0) as got_rate_count_mix
+    ,got_rate_value * if(mix_fix.ffs_count_share is not null, mix_fix.ffs_count_share / base.ffs_count_share, 1.0) as got_rate_value_mix
+    ,got_rate_requested * if(mix_fix.ffs_count_share is not null, mix_fix.ffs_count_share / base.ffs_count_share, 1.0) as got_rate_requested_mix
+    ,got_rate_origination_fee * if(mix_fix.ffs_count_share is not null, mix_fix.ffs_count_share / base.ffs_count_share, 1.0) as got_rate_origination_fee_mix
+    ,got_rate_apr * if(mix_fix.ffs_count_share is not null, mix_fix.ffs_count_share / base.ffs_count_share, 1.0) as got_rate_apr_mix
+    ,got_rate_tr * if(mix_fix.ffs_count_share is not null, mix_fix.ffs_count_share / base.ffs_count_share, 1.0) as got_rate_tr_mix
+    ,got_rate_cnl * if(mix_fix.ffs_count_share is not null, mix_fix.ffs_count_share / base.ffs_count_share, 1.0) as got_rate_cnl_mix
+    ,origination_count * if(mix_fix.ffs_count_share is not null, mix_fix.ffs_count_share / base.ffs_count_share, 1.0) as origination_count_mix
+    ,origination_value * if(mix_fix.ffs_count_share is not null, mix_fix.ffs_count_share / base.ffs_count_share, 1.0) as origination_value_mix
+    ,origination_requested * if(mix_fix.ffs_count_share is not null, mix_fix.ffs_count_share / base.ffs_count_share, 1.0) as origination_requested_mix
+    ,revenue_value * if(mix_fix.ffs_count_share is not null, mix_fix.ffs_count_share / base.ffs_count_share, 1.0) as revenue_value_mix
+  from
+    base
+  left join
+    mix_fix
+    on mix_fix.relative_period + 52 = base.relative_period
+      and mix_fix.fico = base.fico
+      and mix_fix.channel = base.channel
+      and mix_fix.loan_amount_requested_bin = base.loan_amount_requested_bin
+)
+
+,mix_adjusted_channel as (
+  select
+    base.channel as channel_summary
+    ,base.relative_period
+    ,base.fico
+    ,base.channel
+    ,base.loan_amount_requested_bin
+    ,ffs_count * if(mix_fix.ffs_count_share_channel is not null, mix_fix.ffs_count_share_channel / base.ffs_count_share_channel, 1.0) as ffs_count_mix
+    ,ffs_requested * if(mix_fix.ffs_count_share_channel is not null, mix_fix.ffs_count_share_channel / base.ffs_count_share_channel, 1.0) as ffs_requested_mix
+    ,got_rate_count * if(mix_fix.ffs_count_share_channel is not null, mix_fix.ffs_count_share_channel / base.ffs_count_share_channel, 1.0) as got_rate_count_mix
+    ,got_rate_value * if(mix_fix.ffs_count_share_channel is not null, mix_fix.ffs_count_share_channel / base.ffs_count_share_channel, 1.0) as got_rate_value_mix
+    ,got_rate_requested * if(mix_fix.ffs_count_share_channel is not null, mix_fix.ffs_count_share_channel / base.ffs_count_share_channel, 1.0) as got_rate_requested_mix
+    ,got_rate_origination_fee * if(mix_fix.ffs_count_share_channel is not null, mix_fix.ffs_count_share_channel / base.ffs_count_share_channel, 1.0) as got_rate_origination_fee_mix
+    ,got_rate_apr * if(mix_fix.ffs_count_share_channel is not null, mix_fix.ffs_count_share_channel / base.ffs_count_share_channel, 1.0) as got_rate_apr_mix
+    ,got_rate_tr * if(mix_fix.ffs_count_share_channel is not null, mix_fix.ffs_count_share_channel / base.ffs_count_share_channel, 1.0) as got_rate_tr_mix
+    ,got_rate_cnl * if(mix_fix.ffs_count_share_channel is not null, mix_fix.ffs_count_share_channel / base.ffs_count_share_channel, 1.0) as got_rate_cnl_mix
+    ,origination_count * if(mix_fix.ffs_count_share_channel is not null, mix_fix.ffs_count_share_channel / base.ffs_count_share_channel, 1.0) as origination_count_mix
+    ,origination_value * if(mix_fix.ffs_count_share_channel is not null, mix_fix.ffs_count_share_channel / base.ffs_count_share_channel, 1.0) as origination_value_mix
+    ,origination_requested * if(mix_fix.ffs_count_share_channel is not null, mix_fix.ffs_count_share_channel / base.ffs_count_share_channel, 1.0) as origination_requested_mix
+    ,revenue_value * if(mix_fix.ffs_count_share_channel is not null, mix_fix.ffs_count_share_channel / base.ffs_count_share_channel, 1.0) as revenue_value_mix
+  from
+    base
+  left join
+    mix_fix
+    on mix_fix.relative_period + 52 = base.relative_period
+      and mix_fix.fico = base.fico
+      and mix_fix.channel = base.channel
+      and mix_fix.loan_amount_requested_bin = base.loan_amount_requested_bin
+)
+
+,period_to_period_mapping as (
+  select
+    relative_period
+    ,start_date
+    ,relative_period - 52 as relative_period_lp
+    ,relative_period - 104 as relative_period_llp
+  from
+    (select relative_period, start_date from base group by all)
+
+  union
+
+  select
+    relative_period + 52 as relative_period
+    ,date_add(start_date, 364) as start_date
+    ,relative_period as relative_period_lp
+    ,relative_period - 52 as relative_period_llp
+  from
+    (select relative_period, start_date from base group by all)
+)
+
+-- Final aggregation collapses the fico × channel × loan_bin grain.
+-- Python only needs totals per (relative_period, channel_type, channel_summary).
+select
+  relative_period
+  ,min(start_date) as start_date
+  ,channel_type
+  ,channel_summary
+  ,sum(ffs_count)                  as ffs_count
+  ,sum(ffs_count_mix)              as ffs_count_mix
+  ,sum(ffs_count_lp)               as ffs_count_lp
+  ,sum(got_rate_count)             as got_rate_count
+  ,sum(got_rate_count_mix)         as got_rate_count_mix
+  ,sum(got_rate_count_lp)          as got_rate_count_lp
+  ,sum(origination_count)          as origination_count
+  ,sum(origination_count_mix)      as origination_count_mix
+  ,sum(origination_count_lp)       as origination_count_lp
+  ,sum(origination_value)          as origination_value
+  ,sum(origination_value_mix)      as origination_value_mix
+  ,sum(origination_value_lp)       as origination_value_lp
+  ,sum(revenue_value)              as revenue_value
+  ,sum(revenue_value_mix)          as revenue_value_mix
+  ,sum(revenue_value_lp)           as revenue_value_lp
+from
+  (
+    select
+      period_to_period_mapping.relative_period
+      ,period_to_period_mapping.start_date
+      ,dims.*
+
+      ,sum(base_tp.ffs_count) as ffs_count
+      ,sum(coalesce(mix_adjusted_tp.ffs_count_mix, mix_adjusted_tp_channel.ffs_count_mix)) as ffs_count_mix
+      ,sum(base_lp.ffs_count) as ffs_count_lp
+      ,sum(base_llp.ffs_count) as ffs_count_llp
+
+      ,sum(base_tp.ffs_requested) as ffs_requested
+      ,sum(coalesce(mix_adjusted_tp.ffs_requested_mix, mix_adjusted_tp_channel.ffs_requested_mix)) as ffs_requested_mix
+      ,sum(base_lp.ffs_requested) as ffs_requested_lp
+      ,sum(base_llp.ffs_requested) as ffs_requested_llp
+
+      ,sum(base_tp.got_rate_count) as got_rate_count
+      ,sum(coalesce(mix_adjusted_tp.got_rate_count_mix, mix_adjusted_tp_channel.got_rate_count_mix)) as got_rate_count_mix
+      ,sum(base_lp.got_rate_count) as got_rate_count_lp
+      ,sum(base_llp.got_rate_count) as got_rate_count_llp
+
+      ,sum(base_tp.got_rate_value) as got_rate_value
+      ,sum(coalesce(mix_adjusted_tp.got_rate_value_mix, mix_adjusted_tp_channel.got_rate_value_mix)) as got_rate_value_mix
+      ,sum(base_lp.got_rate_value) as got_rate_value_lp
+      ,sum(base_llp.got_rate_value) as got_rate_value_llp
+
+      ,sum(base_tp.got_rate_origination_fee) as got_rate_origination_fee
+      ,sum(coalesce(mix_adjusted_tp.got_rate_origination_fee_mix, mix_adjusted_tp_channel.got_rate_origination_fee_mix)) as got_rate_origination_fee_mix
+      ,sum(base_lp.got_rate_origination_fee) as got_rate_origination_fee_lp
+      ,sum(base_llp.got_rate_origination_fee) as got_rate_origination_fee_llp
+
+      ,sum(base_tp.origination_count) as origination_count
+      ,sum(coalesce(mix_adjusted_tp.origination_count_mix, mix_adjusted_tp_channel.origination_count_mix)) as origination_count_mix
+      ,sum(base_lp.origination_count) as origination_count_lp
+      ,sum(base_llp.origination_count) as origination_count_llp
+
+      ,sum(base_tp.origination_value) as origination_value
+      ,sum(coalesce(mix_adjusted_tp.origination_value_mix, mix_adjusted_tp_channel.origination_value_mix)) as origination_value_mix
+      ,sum(base_lp.origination_value) as origination_value_lp
+      ,sum(base_llp.origination_value) as origination_value_llp
+
+      ,sum(base_tp.revenue_value) as revenue_value
+      ,sum(coalesce(mix_adjusted_tp.revenue_value_mix, mix_adjusted_tp_channel.revenue_value_mix)) as revenue_value_mix
+      ,sum(base_lp.revenue_value) as revenue_value_lp
+      ,sum(base_llp.revenue_value) as revenue_value_llp
+
+    from
+      (
+        select distinct 'split' as channel_type, channel as channel_summary, fico, channel, loan_amount_requested_bin from base
+        union all
+        select distinct 'total' as channel_type, 'Total' as channel_summary, fico, channel, loan_amount_requested_bin from base
+      ) as dims
+    cross join
+      period_to_period_mapping
+    left join
+      base as base_tp
+      on base_tp.relative_period = period_to_period_mapping.relative_period
+        and base_tp.fico = dims.fico
+        and base_tp.channel = dims.channel
+        and base_tp.loan_amount_requested_bin = dims.loan_amount_requested_bin
+    left join
+      mix_adjusted as mix_adjusted_tp
+      on mix_adjusted_tp.relative_period = period_to_period_mapping.relative_period
+        and mix_adjusted_tp.fico = dims.fico
+        and mix_adjusted_tp.channel = dims.channel
+        and mix_adjusted_tp.loan_amount_requested_bin = dims.loan_amount_requested_bin
+        and mix_adjusted_tp.channel_summary = dims.channel_summary
+    left join
+      mix_adjusted_channel as mix_adjusted_tp_channel
+      on mix_adjusted_tp_channel.relative_period = period_to_period_mapping.relative_period
+        and mix_adjusted_tp_channel.fico = dims.fico
+        and mix_adjusted_tp_channel.channel = dims.channel
+        and mix_adjusted_tp_channel.loan_amount_requested_bin = dims.loan_amount_requested_bin
+        and mix_adjusted_tp_channel.channel_summary = dims.channel_summary
+    left join
+      base as base_lp
+      on base_lp.relative_period = period_to_period_mapping.relative_period_lp
+        and base_lp.fico = dims.fico
+        and base_lp.channel = dims.channel
+        and base_lp.loan_amount_requested_bin = dims.loan_amount_requested_bin
+    left join
+      base as base_llp
+      on base_llp.relative_period = period_to_period_mapping.relative_period_llp
+        and base_llp.fico = dims.fico
+        and base_llp.channel = dims.channel
+        and base_llp.loan_amount_requested_bin = dims.loan_amount_requested_bin
+    {% if relative_period is not none %}
+    where
+      period_to_period_mapping.relative_period = {{ relative_period }}
+    {% elif min_relative_period is not none %}
+    where
+      period_to_period_mapping.relative_period >= {{ min_relative_period }}
+      and period_to_period_mapping.relative_period <= 0
+    {% else %}
+    where
+      period_to_period_mapping.relative_period <= 0
+    {% endif %}
+    group by all
+    having
+      ffs_count > 0
+      or ffs_count_lp > 0
+      or ffs_count_llp > 0
+  )
+group by relative_period, start_date, channel_type, channel_summary
